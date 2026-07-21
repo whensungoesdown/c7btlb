@@ -94,22 +94,69 @@ module c7btlb
 
    integer j, k;
 
-   // ---------- Reset ----------
+
+   // ---------- Reset, s_vld_g, Write, and Invalidation (merged) ----------
    always @(posedge clk or negedge resetn) begin
       if (!resetn) begin
+         // Reset: clear all valid bits and s_vld_g
          for (j = 0; j < 32; j = j + 1) begin
             tlb_v0[j] <= 1'b0;
             tlb_v1[j] <= 1'b0;
          end
          s_vld_g <= 1'b0;
+      end else begin
+         // Update s_vld_g on every clock edge (from input s_vld)
+         s_vld_g <= s_vld;
+
+         // Invalidation (highest priority among write-like operations)
+         // Supported operations (inv_op encoding):
+         // 0: invalidate all entries (global)
+         // 1: invalidate by ASID
+         // 2: invalidate by VPN (ignores ASID)
+         // Others: reserved (no operation)
+         if (inv_en) begin
+            case (inv_op)
+               5'b00000: begin  // Global invalidate
+                  for (k = 0; k < 32; k = k + 1) begin
+                     tlb_v0[k] <= 1'b0;
+                     tlb_v1[k] <= 1'b0;
+                  end
+               end
+               5'b00001: begin  // Invalidate by ASID
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if (tlb_asid[k][9:0] == inv_asid[9:0]) begin
+                        tlb_v0[k] <= 1'b0;
+                        tlb_v1[k] <= 1'b0;
+                     end
+                  end
+               end
+               5'b00010: begin  // Invalidate by VPN
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if (tlb_vppn[k] == inv_vppn) begin
+                        tlb_v0[k] <= 1'b0;
+                        tlb_v1[k] <= 1'b0;
+                     end
+                  end
+               end
+               default: ; // no operation
+            endcase
+         end else if (we) begin
+            // Normal write (only if no invalidation)
+            tlb_vppn[w_index] <= w_vppn;
+            tlb_asid[w_index] <= w_asid;
+            tlb_g   [w_index] <= w_g;
+            tlb_v0  [w_index] <= w_v0;
+            tlb_d0  [w_index] <= w_d0;
+            tlb_mat0[w_index] <= w_mat0;
+            tlb_plv0[w_index] <= w_plv0;
+            tlb_ppn0[w_index] <= w_ppn0;
+            tlb_v1  [w_index] <= w_v1;
+            tlb_d1  [w_index] <= w_d1;
+            tlb_mat1[w_index] <= w_mat1;
+            tlb_plv1[w_index] <= w_plv1;
+            tlb_ppn1[w_index] <= w_ppn1;
+         end
       end
-   end
-
-
-   // ---------- Register the search inputs ----------
-
-   always @(posedge clk) begin
-      s_vld_g <= s_vld;
    end
 
    always @(posedge clk) begin
@@ -133,27 +180,6 @@ module c7btlb
       end
    endgenerate  
   
-
-   // uty: test , need encoder? find leading 1?
-
-//   // ---------- Search logic (using registered odd_page) ----------
-//   // Find the first matching entry (lowest index)
-//   reg [4:0]  match_index;
-//   reg        match_found;
-//   reg found_tmp;      // local flag to stop further assignments
-//   integer idx;
-//
-//   always @(*) begin
-//      found_tmp = 1'b0;
-//      match_index = 5'b0;
-//      for (idx = 0; idx < 32; idx = idx + 1) begin
-//         if (!found_tmp && match[idx]) begin
-//            found_tmp = 1'b1;
-//            match_index = idx[4:0];
-//         end
-//      end
-//      match_found = found_tmp;
-//   end
 
    // ---------- Priority encoder for match ----------
    // enc32 finds the lowest index where match[i] is 1.
@@ -181,27 +207,6 @@ module c7btlb
    assign s_plv   = sel_plv;
 
 
-   // ---------- Write port ----------
-   always @(posedge clk) begin
-      if (we) begin
-         tlb_vppn[w_index] <= w_vppn;
-         tlb_asid[w_index] <= w_asid;
-         //tlb_ps  [w_index] <= w_ps;
-         tlb_g   [w_index] <= w_g;
-         tlb_v0  [w_index] <= w_v0;
-         tlb_d0  [w_index] <= w_d0;
-         tlb_mat0[w_index] <= w_mat0;
-         tlb_plv0[w_index] <= w_plv0;
-         tlb_ppn0[w_index] <= w_ppn0;
-         tlb_v1  [w_index] <= w_v1;
-         tlb_d1  [w_index] <= w_d1;
-         tlb_mat1[w_index] <= w_mat1;
-         tlb_plv1[w_index] <= w_plv1;
-         tlb_ppn1[w_index] <= w_ppn1;
-      end
-   end
-
-
    // ---------- Read port ----------
    assign r_vppn = tlb_vppn[r_index];
    assign r_asid = tlb_asid[r_index];
@@ -217,42 +222,6 @@ module c7btlb
    assign r_plv1 = tlb_plv1[r_index];
    assign r_ppn1 = tlb_ppn1[r_index];
 
-
-   // ---------- Invalidation port ----------
-   // Supported operations (inv_op encoding):
-   // 0: invalidate all entries (global)
-   // 1: invalidate by ASID
-   // 2: invalidate by VPN (ignores ASID)
-   // Others: reserved (no operation)
-   always @(posedge clk) begin
-      if (inv_en) begin
-         case (inv_op)
-            5'b00000: begin  // Global invalidate
-               for (k = 0; k < 32; k = k + 1) begin
-                  tlb_v0[k] <= 1'b0;
-                  tlb_v1[k] <= 1'b0;
-               end
-            end
-            5'b00001: begin  // Invalidate by ASID
-               for (k = 0; k < 32; k = k + 1) begin
-                  if (tlb_asid[k][9:0] == inv_asid[9:0]) begin
-                     tlb_v0[k] <= 1'b0;
-                     tlb_v1[k] <= 1'b0;
-                  end
-               end
-            end
-            5'b00010: begin  // Invalidate by VPN
-               for (k = 0; k < 32; k = k + 1) begin
-                  if (tlb_vppn[k] == inv_vppn) begin
-                     tlb_v0[k] <= 1'b0;
-                     tlb_v1[k] <= 1'b0;
-                  end
-               end
-            end
-            default: ; // No operation
-         endcase
-      end
-   end
 
 endmodule
 
