@@ -24,8 +24,8 @@ module c7btlb
    input  [18:0]       w_vppn,
    input  [ 9:0]       w_asid,
    input               w_g,
-   //input  [ 5:0]       w_ps,
-   //input               w_e,
+   input  [ 5:0]       w_ps,
+   input               w_e,
    input               w_v0,
    input               w_d0,
    input  [ 1:0]       w_mat0,
@@ -41,9 +41,9 @@ module c7btlb
    input  [ 4:0]       r_index,
    output [18:0]       r_vppn,
    output [ 9:0]       r_asid,
-   //output              r_g,
-   //output [ 5:0]       r_ps,
-   //output              r_e,
+   output              r_g,
+   output [ 5:0]       r_ps,
+   output              r_e,
    output              r_v0,
    output              r_d0,
    output [ 1:0]       r_mat0,
@@ -65,10 +65,10 @@ module c7btlb
 
    // TLB entries
    // TLBHI
-   //reg        tlb_e        [31:0];
+   reg        tlb_e        [31:0];
    reg [ 9:0] tlb_asid     [31:0];
    reg        tlb_g        [31:0];
-   //reg [ 5:0] tlb_ps       [31:0];
+   reg [ 5:0] tlb_ps       [31:0];
    reg [18:0] tlb_vppn     [31:0];
 
    // TLBLO0
@@ -94,14 +94,38 @@ module c7btlb
 
    integer j, k;
 
+//   // uty: test
+//   // TLBHI
+//   wire        test_tlb0_e    =  tlb_e[0];     
+//   wire [ 9:0] test_tlb0_asid =  tlb_asid[0];
+//   wire        test_tlb0_g    =  tlb_g[0];   
+//   wire [ 5:0] test_tlb0_ps   =  tlb_ps[0];  
+//   wire [18:0] test_tlb0_vppn =  tlb_vppn[0];
+//
+//   // TLBLO0   
+//   wire        test_tlb0_v0   =  tlb_v0[0];  
+//   wire        test_tlb0_d0   =  tlb_d0[0];  
+//   wire [ 1:0] test_tlb0_plv0 =  tlb_plv0[0];
+//   wire [ 1:0] test_tlb0_mat0 =  tlb_mat0[0];
+//   wire [19:0] test_tlb0_ppn0 =  tlb_ppn0[0];
+//
+//   // TLBLO1                        
+//   wire        test_tlb0_v1   =  tlb_v1[0];  
+//   wire        test_tlb0_d1   =  tlb_d1[0];  
+//   wire [ 1:0] test_tlb0_plv1 =  tlb_plv1[0];
+//   wire [ 1:0] test_tlb0_mat1 =  tlb_mat1[0];
+//   wire [19:0] test_tlb0_ppn1 =  tlb_ppn1[0];
+
+   //
 
    // ---------- Reset, s_vld_g, Write, and Invalidation (merged) ----------
    always @(posedge clk or negedge resetn) begin
       if (!resetn) begin
          // Reset: clear all valid bits and s_vld_g
          for (j = 0; j < 32; j = j + 1) begin
-            tlb_v0[j] <= 1'b0;
-            tlb_v1[j] <= 1'b0;
+            //tlb_v0[j] <= 1'b0;
+            //tlb_v1[j] <= 1'b0;
+	    tlb_e[j] <= 1'b0;
          end
          s_vld_g <= 1'b0;
       end else begin
@@ -143,6 +167,7 @@ module c7btlb
          end else if (we) begin
             // Normal write (only if no invalidation)
             tlb_vppn[w_index] <= w_vppn;
+            tlb_e   [w_index] <= w_e;
             tlb_asid[w_index] <= w_asid;
             tlb_g   [w_index] <= w_g;
             tlb_v0  [w_index] <= w_v0;
@@ -176,7 +201,8 @@ module c7btlb
          //assign match[i] = (s_vppn_g == tlb_vppn[i]) && ((s_asid_g == tlb_asid[i][9:0]) || tlb_g[i]);
          assign match[i] = (s_vppn_g == tlb_vppn[i]) &&
                   ((s_asid_g == tlb_asid[i][9:0]) || tlb_g[i]) &&
-                  (s_odd_page_g ? tlb_v1[i] : tlb_v0[i]);
+                  //(s_odd_page_g ? tlb_v1[i] : tlb_v0[i]);
+		  tlb_e[i];
       end
    endgenerate  
   
@@ -210,7 +236,9 @@ module c7btlb
    // ---------- Read port ----------
    assign r_vppn = tlb_vppn[r_index];
    assign r_asid = tlb_asid[r_index];
-   //assign r_ps   = tlb_ps  [r_index];
+   assign r_g    = tlb_g   [r_index];
+   assign r_ps   = tlb_ps  [r_index];
+   assign r_e    = tlb_e   [r_index];
    assign r_v0   = tlb_v0  [r_index];
    assign r_d0   = tlb_d0  [r_index];
    assign r_mat0 = tlb_mat0[r_index];
