@@ -94,28 +94,46 @@ module c7btlb
 
    integer j, k;
 
-//   // uty: test
-//   // TLBHI
-//   wire        test_tlb0_e    =  tlb_e[0];     
-//   wire [ 9:0] test_tlb0_asid =  tlb_asid[0];
-//   wire        test_tlb0_g    =  tlb_g[0];   
-//   wire [ 5:0] test_tlb0_ps   =  tlb_ps[0];  
-//   wire [18:0] test_tlb0_vppn =  tlb_vppn[0];
-//
-//   // TLBLO0   
-//   wire        test_tlb0_v0   =  tlb_v0[0];  
-//   wire        test_tlb0_d0   =  tlb_d0[0];  
-//   wire [ 1:0] test_tlb0_plv0 =  tlb_plv0[0];
-//   wire [ 1:0] test_tlb0_mat0 =  tlb_mat0[0];
-//   wire [19:0] test_tlb0_ppn0 =  tlb_ppn0[0];
-//
-//   // TLBLO1                        
-//   wire        test_tlb0_v1   =  tlb_v1[0];  
-//   wire        test_tlb0_d1   =  tlb_d1[0];  
-//   wire [ 1:0] test_tlb0_plv1 =  tlb_plv1[0];
-//   wire [ 1:0] test_tlb0_mat1 =  tlb_mat1[0];
-//   wire [19:0] test_tlb0_ppn1 =  tlb_ppn1[0];
+   // uty: test
 
+   // 声明测试线（wire 数组）
+   wire        test_tlb_e    [31:0];
+   wire [ 9:0] test_tlb_asid [31:0];
+   wire        test_tlb_g    [31:0];
+   wire [ 5:0] test_tlb_ps   [31:0];
+   wire [18:0] test_tlb_vppn [31:0];
+   wire        test_tlb_v0   [31:0];
+   wire        test_tlb_d0   [31:0];
+   wire [ 1:0] test_tlb_plv0 [31:0];
+   wire [ 1:0] test_tlb_mat0 [31:0];
+   wire [19:0] test_tlb_ppn0 [31:0];
+   wire        test_tlb_v1   [31:0];
+   wire        test_tlb_d1   [31:0];
+   wire [ 1:0] test_tlb_plv1 [31:0];
+   wire [ 1:0] test_tlb_mat1 [31:0];
+   wire [19:0] test_tlb_ppn1 [31:0];
+   
+   // 使用 generate 将内部寄存器连接到测试线
+   genvar i;
+   generate
+       for (i = 0; i < 32; i = i + 1) begin : gen_tlb_test
+           assign test_tlb_e[i]    = tlb_e[i];
+           assign test_tlb_asid[i] = tlb_asid[i];
+           assign test_tlb_g[i]    = tlb_g[i];
+           assign test_tlb_ps[i]   = tlb_ps[i];
+           assign test_tlb_vppn[i] = tlb_vppn[i];
+           assign test_tlb_v0[i]   = tlb_v0[i];
+           assign test_tlb_d0[i]   = tlb_d0[i];
+           assign test_tlb_plv0[i] = tlb_plv0[i];
+           assign test_tlb_mat0[i] = tlb_mat0[i];
+           assign test_tlb_ppn0[i] = tlb_ppn0[i];
+           assign test_tlb_v1[i]   = tlb_v1[i];
+           assign test_tlb_d1[i]   = tlb_d1[i];
+           assign test_tlb_plv1[i] = tlb_plv1[i];
+           assign test_tlb_mat1[i] = tlb_mat1[i];
+           assign test_tlb_ppn1[i] = tlb_ppn1[i];
+       end
+   endgenerate
    //
 
    // ---------- Reset, s_vld_g, Write, and Invalidation (merged) ----------
@@ -142,23 +160,46 @@ module c7btlb
             case (inv_op)
                5'b00000: begin  // Global invalidate
                   for (k = 0; k < 32; k = k + 1) begin
-                     tlb_v0[k] <= 1'b0;
-                     tlb_v1[k] <= 1'b0;
+                     tlb_e[k] <= 1'b0;
                   end
                end
-               5'b00001: begin  // Invalidate by ASID
+               5'b00001: begin  // The same with op 0
                   for (k = 0; k < 32; k = k + 1) begin
-                     if (tlb_asid[k][9:0] == inv_asid[9:0]) begin
-                        tlb_v0[k] <= 1'b0;
-                        tlb_v1[k] <= 1'b0;
+                     tlb_e[k] <= 1'b0;
+                  end
+               end
+               5'b00010: begin  // Invalidate all G=1
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if (tlb_g[k] == 1'b1) begin
+                        tlb_e[k] <= 1'b0;
                      end
                   end
                end
-               5'b00010: begin  // Invalidate by VPN
+               5'b00011: begin  // Invalidate all G=0
                   for (k = 0; k < 32; k = k + 1) begin
-                     if (tlb_vppn[k] == inv_vppn) begin
-                        tlb_v0[k] <= 1'b0;
-                        tlb_v1[k] <= 1'b0;
+                     if (tlb_g[k] == 1'b0) begin
+                        tlb_e[k] <= 1'b0;
+                     end
+                  end
+               end
+               5'b00100: begin  // Invalidate by ASID and G=0
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if ((tlb_g[k] == 1'b0) && (tlb_asid[k][9:0] == inv_asid[9:0])) begin
+                        tlb_e[k] <= 1'b0;
+                     end
+                  end
+               end
+               5'b00101: begin  // Invalidate by ASID, VA and G=0
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if ((tlb_g[k] == 1'b0) && (tlb_asid[k][9:0] == inv_asid[9:0]) && (tlb_vppn[k][18:0] == inv_vppn[18:0])) begin
+                        tlb_e[k] <= 1'b0;
+                     end
+                  end
+               end
+               5'b00110: begin  // Invalidate by (ASID or G=1) and VA
+                  for (k = 0; k < 32; k = k + 1) begin
+                     if (((tlb_g[k] == 1'b1) || (tlb_asid[k][9:0] == inv_asid[9:0])) && (tlb_vppn[k][18:0] == inv_vppn[18:0])) begin
+                        tlb_e[k] <= 1'b0;
                      end
                   end
                end
@@ -170,6 +211,7 @@ module c7btlb
             tlb_e   [w_index] <= w_e;
             tlb_asid[w_index] <= w_asid;
             tlb_g   [w_index] <= w_g;
+            tlb_ps  [w_index] <= w_ps;
             tlb_v0  [w_index] <= w_v0;
             tlb_d0  [w_index] <= w_d0;
             tlb_mat0[w_index] <= w_mat0;
@@ -195,7 +237,7 @@ module c7btlb
    // ---------- Match signal generation (using registered signals) ----------
    wire [31:0] match;   // match[i] = 1 if entry i matches the registered search request
 
-   genvar i;
+   //genvar i;
    generate
       for (i = 0; i < 32; i = i + 1) begin : match_gen
          //assign match[i] = (s_vppn_g == tlb_vppn[i]) && ((s_asid_g == tlb_asid[i][9:0]) || tlb_g[i]);
