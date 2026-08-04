@@ -39,6 +39,8 @@ module top_tb;
    reg [1:0]  w_mat1;
    reg [1:0]  w_plv1;
    reg [19:0] w_ppn1;
+   reg [5:0]  w_ps;     // new
+   reg        w_e;      // new
 
    reg [4:0]  r_index;
    wire [18:0] r_vppn;
@@ -53,6 +55,9 @@ module top_tb;
    wire [1:0]  r_mat1;
    wire [1:0]  r_plv1;
    wire [19:0] r_ppn1;
+   wire        r_g;      // new
+   wire [5:0]  r_ps;     // new
+   wire        r_e;      // new
 
    reg        inv_en;
    reg [4:0]  inv_op;
@@ -89,6 +94,8 @@ module top_tb;
       .w_mat1(w_mat1),
       .w_plv1(w_plv1),
       .w_ppn1(w_ppn1),
+      .w_ps(w_ps),       // new
+      .w_e(w_e),         // new
       .r_index(r_index),
       .r_vppn(r_vppn),
       .r_asid(r_asid),
@@ -102,6 +109,9 @@ module top_tb;
       .r_mat1(r_mat1),
       .r_plv1(r_plv1),
       .r_ppn1(r_ppn1),
+      .r_g(r_g),         // new
+      .r_ps(r_ps),       // new
+      .r_e(r_e),         // new
       .inv_en(inv_en),
       .inv_op(inv_op),
       .inv_asid(inv_asid),
@@ -126,6 +136,7 @@ module top_tb;
    endtask
 
    // Helper task: write a TLB entry
+   // Added w_ps and w_e parameters (default: 4KB page, valid)
    task write_entry;
       input [4:0]  index;
       input [18:0] vppn;
@@ -137,6 +148,8 @@ module top_tb;
       input        v1, d1;
       input [1:0]  mat1, plv1;
       input [19:0] ppn1;
+      input [5:0]  ps;    // new
+      input        e;     // new
       begin
          @(posedge clk);
          we = 1'b1;
@@ -154,6 +167,8 @@ module top_tb;
          w_mat1  = mat1;
          w_plv1  = plv1;
          w_ppn1  = ppn1;
+         w_ps    = ps;
+         w_e     = e;
          @(posedge clk);
          we = 1'b0;
       end
@@ -179,10 +194,7 @@ module top_tb;
          s_asid = asid;
          @(posedge clk);
          s_vld = 1'b0;
-         //@(posedge clk);
-	 //#1;   // 给组合逻辑 1 ns 传播时间（仅在仿真中有效）
-	 //#0;   // 强制 delta 延迟   NOT WORKING
-	 @(negedge clk);                   // 等待下降沿，确保信号稳定
+         @(negedge clk);                   // 等待下降沿，确保信号稳定
          // Sample results after one cycle
          found = s_found;
          idx   = s_index;
@@ -193,7 +205,6 @@ module top_tb;
          plv   = s_plv;
       end
    endtask
-
 
    // Test 1: Reset and search should miss
    task test_reset;
@@ -228,7 +239,8 @@ module top_tb;
          do_reset();
          write_entry(5'd0, 18'h12345, 10'h01, 1'b0,
                      1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);   // ps=12, e=1
          search(18'h12345, 1'b0, 10'h01, found, idx, pfn, d, v, mat, plv);
          if (found && idx == 5'd0 && pfn == 20'hABCDE && v == 1'b1 && d == 1'b1 && mat == 2'b01 && plv == 2'b10)
             $display("  PASS: found at index 0 with correct fields");
@@ -255,7 +267,8 @@ module top_tb;
          do_reset();
          write_entry(5'd0, 18'h12345, 10'h01, 1'b0,
                      1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          search(18'h54321, 1'b0, 10'h01, found, idx, pfn, d, v, mat, plv);
          if (found === 1'b0)
             $display("  PASS: miss as expected");
@@ -279,7 +292,8 @@ module top_tb;
          do_reset();
          write_entry(5'd0, 18'h12345, 10'h01, 1'b0,
                      1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          search(18'h12345, 1'b0, 10'h02, found, idx, pfn, d, v, mat, plv);
          if (found === 1'b0)
             $display("  PASS: miss due to ASID mismatch");
@@ -303,7 +317,8 @@ module top_tb;
          do_reset();
          write_entry(5'd0, 18'h12345, 10'h01, 1'b1,
                      1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          search(18'h12345, 1'b0, 10'h02, found, idx, pfn, d, v, mat, plv);
          if (found && idx == 5'd0 && pfn == 20'hABCDE)
             $display("  PASS: global entry hit with different ASID");
@@ -328,10 +343,12 @@ module top_tb;
          do_reset();
          write_entry(5'd2, 18'h55555, 10'h0A, 1'b0,
                      1'b1, 1'b1, 2'b01, 2'b10, 20'hAAAAA,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          write_entry(5'd5, 18'h55555, 10'h0A, 1'b0,
                      1'b1, 1'b1, 2'b11, 2'b01, 20'hBBBBB,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          search(18'h55555, 1'b0, 10'h0A, found, idx, pfn, d, v, mat, plv);
          if (found && idx == 5'd2 && pfn == 20'hAAAAA)
             $display("  PASS: lowest index (2) selected, pfn=AAAAA");
@@ -358,7 +375,8 @@ module top_tb;
          do_reset();
          write_entry(5'd0, 18'h77777, 10'h03, 1'b0,
                      1'b1, 1'b0, 2'b00, 2'b00, 20'h11111,
-                     1'b1, 1'b1, 2'b11, 2'b11, 20'h22222);
+                     1'b1, 1'b1, 2'b11, 2'b11, 20'h22222,
+                     6'd12, 1'b1);
          // Page 0
          search(18'h77777, 1'b0, 10'h03, found, idx, pfn, d, v, mat, plv);
          if (!(found && pfn == 20'h11111 && v == 1'b1 && d == 1'b0)) ok = 1'b0;
@@ -383,20 +401,22 @@ module top_tb;
          do_reset();
          write_entry(5'd3, 18'h99999, 10'h0F, 1'b1,
                      1'b1, 1'b1, 2'b10, 2'b01, 20'h33333,
-                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0);
+                     1'b0, 1'b0, 2'b00, 2'b00, 20'h0,
+                     6'd12, 1'b1);
          @(posedge clk);
          r_index = 5'd3;
          @(negedge clk);
          @(posedge clk);
          if (r_vppn == 18'h99999 && r_asid == 10'h0F && r_v0 == 1'b1 && r_d0 == 1'b1 &&
              r_mat0 == 2'b10 && r_plv0 == 2'b01 && r_ppn0 == 20'h33333 &&
-             r_v1 == 1'b0 && r_d1 == 1'b0 && r_mat1 == 2'b00 && r_plv1 == 2'b00 && r_ppn1 == 20'h0)
+             r_v1 == 1'b0 && r_d1 == 1'b0 && r_mat1 == 2'b00 && r_plv1 == 2'b00 && r_ppn1 == 20'h0 &&
+             r_g == 1'b1 && r_ps == 6'd12 && r_e == 1'b1)
             $display("  PASS: read port matches written data");
          else begin
             $display("  FAIL: read port mismatch");
-            $display("    expected: vppn=99999, asid=0F, v0=1, d0=1, mat0=10, plv0=01, ppn0=33333");
-            $display("    got: vppn=%h, asid=%h, v0=%b, d0=%b, mat0=%b, plv0=%b, ppn0=%h",
-                     r_vppn, r_asid, r_v0, r_d0, r_mat0, r_plv0, r_ppn0);
+            $display("    expected: vppn=99999, asid=0F, v0=1, d0=1, mat0=10, plv0=01, ppn0=33333, g=1, ps=12, e=1");
+            $display("    got: vppn=%h, asid=%h, v0=%b, d0=%b, mat0=%b, plv0=%b, ppn0=%h, g=%b, ps=%h, e=%b",
+                     r_vppn, r_asid, r_v0, r_d0, r_mat0, r_plv0, r_ppn0, r_g, r_ps, r_e);
          end
          if (r_vppn == 18'h99999 && r_asid == 10'h0F) pass_count = pass_count + 1;
          else fail_count = fail_count + 1;
@@ -414,8 +434,8 @@ module top_tb;
       begin
          $display("\nTEST %0d: Invalidate all entries", test_id);
          do_reset();
-         write_entry(5'd0, 18'h11111, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hAAAAA, 1'b0,1'b0,2'b00,2'b00,20'h0);
-         write_entry(5'd1, 18'h22222, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hBBBBB, 1'b0,1'b0,2'b00,2'b00,20'h0);
+         write_entry(5'd0, 18'h11111, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hAAAAA, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
+         write_entry(5'd1, 18'h22222, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hBBBBB, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
          @(posedge clk);
          inv_en = 1'b1;
          inv_op = 5'b00000;
@@ -444,11 +464,11 @@ module top_tb;
          ok = 1'b1;
          $display("\nTEST %0d: Invalidate by ASID", test_id);
          do_reset();
-         write_entry(5'd0, 18'h11111, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hAAAAA, 1'b0,1'b0,2'b00,2'b00,20'h0);
-         write_entry(5'd1, 18'h22222, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hBBBBB, 1'b0,1'b0,2'b00,2'b00,20'h0);
+         write_entry(5'd0, 18'h11111, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hAAAAA, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
+         write_entry(5'd1, 18'h22222, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hBBBBB, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
          @(posedge clk);
          inv_en = 1'b1;
-         inv_op = 5'b00001;
+         inv_op = 5'b00100;
          inv_asid = 10'h01;
          @(posedge clk);
          inv_en = 1'b0;
@@ -479,11 +499,12 @@ module top_tb;
          ok = 1'b1;
          $display("\nTEST %0d: Invalidate by VPN", test_id);
          do_reset();
-         write_entry(5'd0, 18'hAAAAA, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'h11111, 1'b0,1'b0,2'b00,2'b00,20'h0);
-         write_entry(5'd1, 18'hBBBBB, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'h22222, 1'b0,1'b0,2'b00,2'b00,20'h0);
+         write_entry(5'd0, 18'hAAAAA, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'h11111, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
+         write_entry(5'd1, 18'hBBBBB, 10'h02, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'h22222, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
          @(posedge clk);
          inv_en = 1'b1;
-         inv_op = 5'b00010;
+         inv_op = 5'b00101;
+	 inv_asid = 10'h01;
          inv_vppn = 18'hAAAAA;
          @(posedge clk);
          inv_en = 1'b0;
@@ -512,7 +533,7 @@ module top_tb;
       begin
          $display("\nTEST %0d: Reset after operations - clears valid bits", test_id);
          do_reset();
-         write_entry(5'd0, 18'h12345, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE, 1'b0,1'b0,2'b00,2'b00,20'h0);
+         write_entry(5'd0, 18'h12345, 10'h01, 1'b0, 1'b1, 1'b1, 2'b01, 2'b10, 20'hABCDE, 1'b0,1'b0,2'b00,2'b00,20'h0, 6'd12,1'b1);
          do_reset();
          search(18'h12345, 1'b0, 10'h01, found, idx, pfn, d, v, mat, plv);
          if (found === 1'b0)
@@ -549,6 +570,8 @@ module top_tb;
       w_mat1 = 2'b00;
       w_plv1 = 2'b00;
       w_ppn1 = 20'h0;
+      w_ps = 6'd12;      // default
+      w_e = 1'b1;        // default valid
       r_index = 5'h0;
       inv_en = 1'b0;
       inv_op = 5'h0;
@@ -580,9 +603,9 @@ module top_tb;
       // Summary
       $display("\n=============================================");
       if (0 == fail_count)
-      	 $display("TEST SUMMARY: ALL PASS");
+         $display("TEST SUMMARY: ALL PASS");
       else
-      	 $display("TEST SUMMARY: %0d PASS, %0d FAIL", pass_count, fail_count);
+         $display("TEST SUMMARY: %0d PASS, %0d FAIL", pass_count, fail_count);
       $display("=============================================");
       $finish;
    end
