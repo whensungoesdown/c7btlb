@@ -9,9 +9,10 @@ same module is instantiated twice:
 | `u_dtlb` | `c7blsu` | load/store (`lsu_addr_ls2`) and TLBSRCH | `c7blsu/rtl/c7blsu.v:406` |
 
 The two instances are not kept coherent by hardware. Software selects which
-one a TLBWR / TLBFILL / INVTLB / TLBRD / TLBSRCH acts on through the
+one a TLBWR / TLBFILL / TLBRD / TLBSRCH acts on through the
 non-architectural bit `TLBIDX.I_D` (bit 16, 0 = ITLB, 1 = DTLB,
-`c7bcsr/rtl/c7bcsr.v:511`).
+`c7bcsr/rtl/c7bcsr.v:511`). INVTLB has no index and invalidates matching
+entries in both TLBs, as on a unified TLB.
 
 The module has four ports:
 
@@ -67,8 +68,10 @@ The module has four ports:
 | `flist/c7btlb.flist` | | RTL file list (`rtl/c7btlb.v`) |
 | `flist/sim.files` | | Simulation file list (`rtl/c7btlb.v`, `simulation/altera_mf.v`) |
 | `tb/test0_top_tb.v` | `top_tb` | Unit testbench: 12 tasks (reset, write/search, miss, ASID, G, priority, odd page, read port, INVTLB op 0/4/5, reset after INVTLB) |
-| `simulation/run_all_tests.sh` | | Runs `test0` and greps for PASS/FAIL |
-| `simulation/test0/simulate.sh` | | ModelSim/Questa flow (`vlib`/`vlog`/`vsim -c`) |
+| `tb/c7btlb_tb_common.vh` | | Shared testbench body for test1..test5: DUT, reference model, tasks |
+| `tb/test<N>_*_top_tb.v` | `top_tb` | Tests 1..5, see [Tests](#tests) |
+| `simulation/run_all_tests.sh` | | Runs every test, prints PASS/FAIL per test and a summary |
+| `simulation/test<N>/simulate.sh` | | ModelSim/Questa flow (`vlib`/`vlog`/`vsim -c`) |
 
 Related logic outside this directory:
 
@@ -148,8 +151,9 @@ is an OR encoding (`idx[0] = in[1]|in[3]`, `idx[1] = in[2]|in[3]`,
 multiple hits inside one aligned group of 4 the index is the OR of the hit
 indices, e.g. hits at 1 and 2 give index 3, which may be a non-matching
 entry. The comment at `c7btlb.v:253` ("lowest index") holds only across
-groups. Test 6 of the testbench uses entries 2 and 5 (different groups).
-Multiple hits only arise if software writes overlapping entries.
+groups. Test 6 of `test0` uses entries 2 and 5 (different groups), so it
+does not see this; `test1_multihit_priority` and phase B of `test4_random`
+do. Multiple hits only arise if software writes overlapping entries.
 
 When `match == 0`, `match_index = 0` (`c7btlb.v:368`).
 
@@ -243,20 +247,23 @@ TLBIDX.PS/NE on the next edge (`c7bcsr.v:556-585`, `c7bcsr.v:660-681`).
   (4 KB page pair), independent of the entry's PS.
 - The decoder flags INVTLB with `rd > 6` as an illegal instruction
   (`c7bifu/rtl/decoder.v:872`).
-- `inv_en` is gated by `TLBIDX.I_D` like the write port: ITLB
-  `invtlb_vld_e & ~I_D` (`c7bifu.v:400`), DTLB `invtlb_vld_e & I_D`
-  (`c7blsu.v:402`). One INVTLB therefore affects only one of the two TLBs.
+- `inv_en` is not gated by `TLBIDX.I_D`: both the ITLB (`c7bifu.v`) and
+  the DTLB (`c7blsu.v`) get `invtlb_vld_e`, so one INVTLB invalidates
+  matching entries in both TLBs. It used to be gated like the write port,
+  which left stale entries in the other TLB whenever the kernel flushed a
+  page (for example after copy-on-write) with `I_D` selecting the wrong
+  TLB.
 
 ## ITLB vs DTLB selection (TLBIDX.I_D)
 
 | Operation | ITLB (`I_D = 0`) | DTLB (`I_D = 1`) |
 |---|---|---|
 | TLBWR / TLBFILL | written | written |
-| INVTLB | invalidated | invalidated |
+| INVTLB | both invalidated, `I_D` ignored | both invalidated, `I_D` ignored |
 | TLBRD | both read; CSR takes ITLB data | both read; CSR takes DTLB data |
 | TLBSRCH | both searched; CSR takes ITLB result | both searched; CSR takes DTLB result |
 
-For write and INVTLB only the selected TLB is modified. For read and search
+For write only the selected TLB is modified; INVTLB modifies both. For read and search
 both instances see the request and the selection happens in `c7bcsr.v`
 (`c7bcsr.v:557`, `c7bcsr.v:579`, `c7bcsr.v:604`). `I_D` is writable only by
 CSR write; TLBRD/TLBSRCH do not change it (`c7bcsr.v:533-545`).
@@ -397,9 +404,30 @@ In the checked-out `c7bifu.v` the exception terms are qualified only by
 | `s_pfn`/`s_v`/`s_d`/`s_mat`/`s_plv`/`s_index` are not qualified by `s_vld_g` or `s_found` | `c7btlb.v:270-275` |
 | Reset clears only `E` (and `s_vld_g`); other entry fields and `s_*_g` are X until written | `c7btlb.v:141-148`, `c7btlb.v:229-235` |
 | Priority encoder returns OR of indices on multiple hits within a 4-entry group | `c7btlb.v:312-313` |
-| ITLB and DTLB are separate; software must write / invalidate each via `TLBIDX.I_D` | `c7bifu.v:385,400`, `c7blsu.v:390,402` |
+| ITLB and DTLB are separate; software must write each via `TLBIDX.I_D` (INVTLB acts on both) | `c7bifu.v:405`, `c7blsu.v:390` |
 | INVTLB op comment block does not match the implemented ops | `c7btlb.v:153-158` |
 | Debug wire arrays `test_tlb_*` mirror the entry arrays (simulation visibility only) | `c7btlb.v:97-137` |
+
+## Tests
+
+Run all tests with `simulation/run_all_tests.sh`, or one test with
+`./simulate.sh` in its directory (`./viewwave.sh` opens the waveform).
+Tests 1..5 compare the DUT with a reference model of the LA32R TLB rules
+(`tb/c7btlb_tb_common.vh`), drive inputs and sample outputs on the falling
+clock edge, and print `TEST SUMMARY: ALL PASS` or the number of failed
+checks.
+
+| Test | Checks | Result with the current RTL |
+|---|---|---|
+| `test0` | Original unit tests | PASS |
+| `test1_multihit_priority` | Several matching entries: every set inside one group of 4, every pair of entries, a V=0 refill entry plus the valid entry for the same page | FAIL: `enc4` returns the OR of the matching indices |
+| `test2_invtlb` | INVTLB op 0..6 with several arguments, reserved ops, reset, E=0 writes; every entry checked through the read port | PASS |
+| `test3_search_port` | Result latency, back-to-back searches, write / INVTLB in the request cycle, V=0 and E=0 entries, odd/even fields, ASID, G, all VPPN bits | PASS |
+| `test4_random` | 5000 random operations per phase against the model; phase A without, phase B with duplicate entries (`+seed=<n>`) | FAIL in phase B only, in searches with several matches in one group of 4 |
+| `test5_page_size` | PS=22 (4 MB) entries | FAIL: PS is stored but entries are matched as 4 KB pairs (missing feature, Linux uses 4 KB pages) |
+
+The results in the last column are the expected outcome derived from the
+RTL; with `enc4` fixed, tests 0..4 should pass.
 
 ## Interface summary
 

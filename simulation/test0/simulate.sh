@@ -88,7 +88,7 @@ expand_flist "${PROJECT_ROOT}/flist/sim.files" > "$TEMP_FLIST"
 # 使用绝对路径
 #vlog +incdir+${PROJECT_ROOT}/rtl -f ${PROJECT_ROOT}/flist/sim.files ${PROJECT_ROOT}/tb/soc2_test6_spaceinvaders_top_tb.v
 
-vlog +incdir+${PROJECT_ROOT}/rtl -f "$TEMP_FLIST" ${PROJECT_ROOT}/tb/test0_top_tb.v
+vlog +incdir+${PROJECT_ROOT}/rtl -f "$TEMP_FLIST" ${PROJECT_ROOT}/tb/test0_top_tb.v || { echo "FAIL: vlog compile error"; exit 1; }
 
 rm -f "$TEMP_FILE"
 

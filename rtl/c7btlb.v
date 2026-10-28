@@ -308,9 +308,10 @@ module enc4 (
     output [1:0] idx
 );
     assign valid = |in;
-    // Binary encoding of least significant set bit
-    assign idx[0] = in[1] | in[3];
-    assign idx[1] = in[2] | in[3];
+    // Index of the least significant set bit
+    //   in = xxx1 -> 0, xx10 -> 1, x100 -> 2, 1000 -> 3, 0000 -> 0
+    assign idx[0] = ~in[0] & (in[1] | (~in[2] & in[3]));
+    assign idx[1] = ~in[0] & ~in[1] & (in[2] | in[3]);
 endmodule
 
 // 8-bit priority encoder using two 4-bit encoders
